@@ -13,15 +13,15 @@
 
   "parameters": {
     "PlaybookName": {
-      "defaultValue": "Test_Izoolab",
+      "defaultValue": "Izoolab_Incident_Ingestion",
       "type": "String"
     },
     "WorkspaceName": {
-        "defaultValue": "Test_Izoolab_Workspace",
+        "defaultValue": "Izoolab_Workspace",
       "type": "String"
     },
     "WorkspaceResourceGroup": {
-        "defaultValue": "Test_Izoolab_Resource_Group",
+        "defaultValue": "Izoolab_Resource_Group",
       "type": "String"
     },
     "QueryTimeRange": {
@@ -498,4 +498,5 @@
       }
     }
   ]
+
 }
