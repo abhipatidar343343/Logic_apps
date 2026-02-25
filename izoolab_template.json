@@ -1,0 +1,501 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "title": "Izoolabs Incident Sync",
+    "description": "This playbook fetches incidents from Izoolabs API, enriches them, checks duplicates in Log Analytics, and ingests into Sentinel custom table.",
+    "prerequisites": "Managed Identity must have access to Log Analytics workspace.",
+    "lastUpdateTime": "2026-02-23T00:00:00.000Z",
+    "author": {
+      "name": "Your Name"
+    }
+  },
+
+  "parameters": {
+    "PlaybookName": {
+      "defaultValue": "Test_Izoolab",
+      "type": "String"
+    },
+    "WorkspaceName": {
+        "defaultValue": "Test_Izoolab_Workspace",
+      "type": "String"
+    },
+    "WorkspaceResourceGroup": {
+        "defaultValue": "Test_Izoolab_Resource_Group",
+      "type": "String"
+    },
+    "QueryTimeRange": {
+        "type": "String",
+        "defaultValue": "7d"
+    }
+  },
+
+  "variables": {
+    "azureMonitorConnectionName": "[concat('azuremonitorlogs-', parameters('PlaybookName'))]",
+    "dataCollectorConnectionName": "[concat('azureloganalyticsdatacollector-', parameters('PlaybookName'))]"
+  },
+
+  "resources": [
+
+    {
+  "type": "Microsoft.Web/connections",
+  "apiVersion": "2016-06-01",
+  "name": "[variables('azureMonitorConnectionName')]",
+  "location": "[resourceGroup().location]",
+  "properties": {
+    "displayName": "[parameters('PlaybookName')]",
+    "api": {
+      "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuremonitorlogs')]"
+    }
+  }
+},
+      
+    
+
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[variables('dataCollectorConnectionName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "displayName": "[parameters('PlaybookName')]",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureloganalyticsdatacollector')]"
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2017-07-01",
+      "name": "[parameters('PlaybookName')]",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', variables('azureMonitorConnectionName'))]",
+        "[resourceId('Microsoft.Web/connections', variables('dataCollectorConnectionName'))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "interval": 30,
+                "frequency": "Minute"
+              }
+            }
+          },
+
+          "actions": {
+           
+                        "HTTP_Auth": {
+                            "runAfter": {
+                                "Initialize_variables": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "https://client-api.izoolabs.com/api/Token/Authenticate",
+                                "method": "POST",
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "apiKey": "INSERT API KEY HERE",
+                                    "secretKey": "INSERT SECRET KEY HERE"
+                                }
+                            },
+                            "runtimeConfiguration": {
+                                "contentTransfer": {
+                                    "transferMode": "Chunked"
+                                }
+                            }
+                        },
+                        "HTTP_Incident": {
+                            "runAfter": {
+                                "HTTP_Auth": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "https://client-api.izoolabs.com/api/ThreatManagement/FetchIncidents",
+                                "method": "POST",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('HTTP_Auth')?['result']?['accessToken']}"
+                                },
+                                "body": {
+                                    "fromDate": "@{div(sub(ticks(addMinutes(utcNow(),-31)),ticks('1970-01-01T00:00:00Z')),10000000)\n}",
+                                    "toDate": "@{div(sub(ticks(utcNow()),ticks('1970-01-01T00:00:00Z')),10000000)}"
+                                }
+                            },
+                            "runtimeConfiguration": {
+                                "contentTransfer": {
+                                    "transferMode": "Chunked"
+                                }
+                            }
+                        },
+                        "Initialize_variables": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "logs",
+                                        "type": "array"
+                                    },
+                                    {
+                                        "name": "files",
+                                        "type": "array"
+                                    }
+                                ]
+                            }
+                        },
+                        "if_no_Incident": {
+                            "actions": {},
+                            "runAfter": {
+                                "HTTP_Incident": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "For_each_Incident": {
+                                        "foreach": "@body('HTTP_Incident')?['result']?['incidents']",
+                                        "actions": {
+                                            "check_incident_type": {
+                                                "actions": {
+                                                    "Run_query_and_list_results": {
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": "izoolab_CL\n| where incidentID_s == \"@{items('For_each_Incident')?['incidentID']}\"",
+                                                            "path": "/queryData",
+                                                           "queries": {
+                                                                "subscriptions": "@{subscription().subscriptionId}",
+                                                                "resourcegroups": "@{parameters('WorkspaceResourceGroup')}",
+                                                                "resourcetype": "Log Analytics Workspace",
+                                                                "resourcename": "@{parameters('WorkspaceName')}",
+                                                                "timerange": "@{parameters('QueryTimeRange')}"
+                                                            }
+                                                        }
+                                                    },
+                                                    "Condition_2": {
+                                                        "actions": {},
+                                                        "runAfter": {
+                                                            "Run_query_and_list_results": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "else": {
+                                                            "actions": {
+                                                                "left_data": {
+                                                                    "type": "Compose",
+                                                                    "inputs": "@items('For_each_Incident')"
+                                                                },
+                                                                "HTTP_case_details": {
+                                                                    "runAfter": {
+                                                                        "left_data": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Http",
+                                                                    "inputs": {
+                                                                        "uri": "https://client-api.izoolabs.com/api/ThreatManagement/CaseDetail?caseId=@{items('For_each_Incident')?['incidentID']}",
+                                                                        "method": "GET",
+                                                                        "headers": {
+                                                                            "Authorization": "Bearer @{body('HTTP_Auth')?['result']?['accessToken']}"
+                                                                        }
+                                                                    },
+                                                                    "runtimeConfiguration": {
+                                                                        "contentTransfer": {
+                                                                            "transferMode": "Chunked"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "right_data": {
+                                                                    "runAfter": {
+                                                                        "HTTP_case_details": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": "@body('HTTP_case_details')?['result']"
+                                                                },
+                                                                "Output": {
+                                                                    "runAfter": {
+                                                                        "right_data": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": "@union(outputs('left_data'), outputs('right_data'))\n"
+                                                                },
+                                                                "top": {
+                                                                    "runAfter": {
+                                                                        "Output": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": {
+                                                                        "incidentID": "@{outputs('output')?['incidentID']}",
+                                                                        "brandCode": "@{outputs('output')?['brandCode']}",
+                                                                        "brand": "@{outputs('output')?['brand']}",
+                                                                        "brandId": "@{outputs('output')?['brandId']}",
+                                                                        "url": "@{outputs('output')?['url']}",
+                                                                        "incidentType": "@{outputs('output')?['incidentType']}",
+                                                                        "subIncidentType": "@{outputs('output')?['subIncidentType']}",
+                                                                        "threatType": "@{outputs('output')?['threatType']}",
+                                                                        "status": "@{outputs('output')?['status']}",
+                                                                        "statusCode": "@{outputs('output')?['statusCode']}",
+                                                                        "clientRef": "@{outputs('output')?['clientRef']}",
+                                                                        "createdOn": "@{if(empty(outputs('output')?['createdOn']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['createdOn'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                                                                        "closedOn": "@{if(empty(outputs('output')?['closedOn']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['closedOn'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                                                                        "detectionDate": "@{if(empty(outputs('output')?['detectionDate']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['detectionDate'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                                                                        "addedDate": "@{if(empty(outputs('output')?['addedDate']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['addedDate'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
+                                                                        "uptime": "@{outputs('output')?['uptime']}",
+                                                                        "detectedBy": "@{outputs('output')?['detectedBy']}",
+                                                                        "executiveName": "@{outputs('output')?['executiveName']}",
+                                                                        "caseType": "@{outputs('output')?['caseType']}",
+                                                                        "caseDescription": "@{outputs('output')?['caseDescription']}",
+                                                                        "statusDescription": "@{outputs('output')?['statusDescription']}",
+                                                                        "description": "@{outputs('output')?['description']}",
+                                                                        "impact": "@{outputs('output')?['impact']}",
+                                                                        "recommendation": "@{outputs('output')?['recommendation']}",
+                                                                        "ipAddress": "@{outputs('output')?['ipAddress']}",
+                                                                        "webhost": "@{outputs('output')?['webhost']}",
+                                                                        "webhostCountry": "@{outputs('output')?['webhostCountry']}",
+                                                                        "registrarName": "@{outputs('output')?['registrarName']}",
+                                                                        "nameServer": "@{outputs('output')?['nameServer']}",
+                                                                        "mxRecord": "@{outputs('output')?['mxRecord']}",
+                                                                        "progressStage": "@{outputs('output')?['progressStage']}",
+                                                                        "mobileAppName": "@{outputs('output')?['mobileAppName']}",
+                                                                        "mobileAppVersion": "@{outputs('output')?['mobileAppVersion']}",
+                                                                        "mobileAppStatus": "@{outputs('output')?['mobileAppStatus']}",
+                                                                        "mobileAppSignature": "@{outputs('output')?['mobileAppSignature']}"
+                                                                    }
+                                                                },
+                                                                "final_output": {
+                                                                    "runAfter": {
+                                                                        "Condition_1": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": "@setProperty(\n    setProperty(\n        outputs('top'),\n        'incidentStatusLogs',\n        variables('logs')\n    ),\n    'caseFiles',\n    variables('files')\n)\n"
+                                                                },
+                                                                "Send_Data": {
+                                                                    "runAfter": {
+                                                                        "final_output": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azureloganalyticsdatacollector']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "body": "@{outputs('final_output')}",
+                                                                        "headers": {
+                                                                            "Log-Type": "izoolab_CL"
+                                                                        },
+                                                                        "path": "/api/logs"
+                                                                    }
+                                                                },
+                                                                "Condition": {
+                                                                    "actions": {},
+                                                                    "runAfter": {
+                                                                        "top": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "else": {
+                                                                        "actions": {
+                                                                            "For_each": {
+                                                                                "foreach": "@outputs('Output')?['incidentStatusLogs']",
+                                                                                "actions": {
+                                                                                    "logs_append": {
+                                                                                        "type": "AppendToArrayVariable",
+                                                                                        "inputs": {
+                                                                                            "name": "logs",
+                                                                                            "value": {
+                                                                                                "incidentStatus": "@items('For_each')?['incidentStatus']",
+                                                                                                "incidentStatusDescription": "@{string(items('For_each')?['incidentStatusDescription'])}",
+                                                                                                "remark": "@{string(items('For_each')?['remark'])}",
+                                                                                                "updatedOn": "@{formatDateTime(convertTimeZone(addSeconds('1970-01-01T00:00:00Z', int(items('For_each')?['updatedOn'])), 'UTC', 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}",
+                                                                                                "updatedBy": "@{string(items('For_each')?['updatedBy'])}"
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                },
+                                                                                "type": "Foreach"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "expression": {
+                                                                        "and": [
+                                                                            {
+                                                                                "equals": [
+                                                                                    "@outputs('Output')?['incidentStatusLogs']",
+                                                                                    "@null"
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "type": "If"
+                                                                },
+                                                                "Condition_1": {
+                                                                    "actions": {},
+                                                                    "runAfter": {
+                                                                        "Condition": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "else": {
+                                                                        "actions": {
+                                                                            "For_each-copy": {
+                                                                                "foreach": "@outputs('Output')?['caseFiles']",
+                                                                                "actions": {
+                                                                                    "Append_files": {
+                                                                                        "type": "AppendToArrayVariable",
+                                                                                        "inputs": {
+                                                                                            "name": "files",
+                                                                                            "value": {
+                                                                                                "dateUploaded": "@{formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(items('For_each-copy')?['dateUploaded'])), 'yyyy-MM-dd HH:mm:ss')}",
+                                                                                                "originalFilename": "@{string(items('For_each-copy')?['originalFilename'])}",
+                                                                                                "fileToken": "@{string(items('For_each-copy')?['fileToken'])}",
+                                                                                                "isCaseScreenshot": "@{string(items('For_each-copy')?['isCaseScreenshot'])}"
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                },
+                                                                                "type": "Foreach"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "expression": {
+                                                                        "and": [
+                                                                            {
+                                                                                "equals": [
+                                                                                    "@outputs('Output')?['caseFiles']",
+                                                                                    "@null"
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "type": "If"
+                                                                }
+                                                            }
+                                                        },
+                                                        "expression": {
+                                                            "and": [
+                                                                {
+                                                                    "greater": [
+                                                                        "@length(body('Run_query_and_list_results')?['value'])",
+                                                                        0
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
+                                                        "type": "If"
+                                                    }
+                                                },
+                                                "else": {
+                                                    "actions": {}
+                                                },
+                                                "expression": {
+                                                    "or": [
+                                                        {
+                                                            "equals": [
+                                                                "@items('For_each_Incident')?['threatType']",
+                                                                "Critical Threat"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@items('For_each_Incident')?['threatType']",
+                                                                "High Threat"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@items('For_each_Incident')?['threatType']",
+                                                                "Substantial Threat"
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "type": "If"
+                                            }
+                                        },
+                                        "type": "Foreach"
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@body('HTTP_Incident')?['result']",
+                                            "@null"
+                                        ]
+                                    },
+                                    {
+                                        "equals": [
+                                            "",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        }
+                    
+          },
+
+          "outputs": {}
+        },
+
+        "parameters": {
+          "$connections": {
+            "value": {
+              "azuremonitorlogs": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('azureMonitorConnectionName'))]",
+  "connectionName": "[variables('azureMonitorConnectionName')]",
+  "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuremonitorlogs')]"
+              },
+              "azureloganalyticsdatacollector": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('dataCollectorConnectionName'))]",
+                "connectionName": "[variables('dataCollectorConnectionName')]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureloganalyticsdatacollector')]"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
