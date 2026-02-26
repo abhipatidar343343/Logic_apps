@@ -30,21 +30,6 @@ Fetches incidents from Izoolab API, enriches them, checks for duplicates, and in
 
 ---
 
-# 🔐 Managed Identity (Important)
-
-If the Logic App uses Azure Monitor Logs or Log Analytics:
-
-- Ensure **System Assigned Managed Identity** is enabled.
-- After deployment, go to:
-  - Logic App → Identity → Turn **On** (if not already enabled).
-- Assign required roles on the target Log Analytics Workspace:
-  - `Log Analytics Contributor` OR
-  - `Log Analytics Data Sender` (minimum required)
-
-Without proper RBAC permissions, ingestion or query actions may fail.
-
----
-
 # 🔄 Post-Deployment Actions (Required)
 
 After deployment:
@@ -66,6 +51,21 @@ You MUST:
 - Save the Logic App
 
 ARM deployments reset these values to default placeholders.
+
+---
+
+# 🔐 Managed Identity (Important)
+
+If the Logic App uses Azure Monitor Logs or Log Analytics:
+
+- Ensure **System Assigned Managed Identity** is enabled.
+- After deployment, go to:
+  - Logic App → Identity → Turn **On** (if not already enabled).
+- Assign required roles on the target Log Analytics Workspace:
+  - `Log Analytics Contributor` OR
+  - `Log Analytics Data Sender` (minimum required)
+
+Without proper RBAC permissions, ingestion or query actions may fail.
 
 ---
 
