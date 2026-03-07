@@ -1,0 +1,852 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_AEAZ_Firewall_IP_Blocking_name": {
+            "defaultValue": "AEAZ_Firewall-IP-Blocking",
+            "type": "String"
+        },
+        "connections_azuresentinel_3_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/azuresentinel-3",
+            "type": "String"
+        },
+        "connections_azuremonitorlogs_1_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/azuremonitorlogs-1",
+            "type": "String"
+        },
+        "customApis_ipapicustomconnector_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/pci_sec_rg/providers/Microsoft.Web/customApis/ipapicustomconnector",
+            "type": "String"
+        },
+        "connections_ipapicustomconnector_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/ipapicustomconnector",
+            "type": "String"
+        },
+        "customApis_abuseipdbapi_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/pci_sec_rg/providers/Microsoft.Web/customApis/abuseipdbapi",
+            "type": "String"
+        },
+        "connections_abuseipdbapi_1_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/abuseipdbapi-1",
+            "type": "String"
+        },
+        "connections_teams_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/teams",
+            "type": "String"
+        },
+        "connections_azuresentinel_2_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/azuresentinel-2",
+            "type": "String"
+        },
+        "connections_filesystem_1_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/filesystem-1",
+            "type": "String"
+        },
+        "connections_office365_1_externalid": {
+            "defaultValue": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/resourceGroups/PCI_SEC_RG/providers/Microsoft.Web/connections/office365-1",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_AEAZ_Firewall_IP_Blocking_name')]",
+            "location": "uaenorth",
+            "tags": {
+                "Created By": "Shubham Lale",
+                "Created Date": "09/12/2024",
+                "Buisness Owner": "Lokesh Godara",
+                "Technical Owner": "Chaitanya Mali",
+                "Technical Owner 2": "Varun Patil"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_entity": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@listCallbackUrl()"
+                                },
+                                "path": "/entity/@{encodeURIComponent('IP')}"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Variable_(SourceIP)": {
+                            "runAfter": {
+                                "Get_incident": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Source IP",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Variable(IPAddress)": {
+                            "runAfter": {
+                                "Variable_(SourceIP)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "IPAddress",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Validation_in_Firewall_Blocked_IP": {
+                            "runAfter": {
+                                "Appending_variable_to_(Ip_Address)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuremonitorlogs-1']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": "let Incident_IPs = '@{variables('IPAddress')}';\n_GetWatchlist('firewallblockedip')\n| where SearchKey == Incident_IPs\n| project LastUpdatedTimeUTC,SearchKey",
+                                "path": "/queryData",
+                                "queries": {
+                                    "subscriptions": "05482007-a538-44e4-8e37-7cab6b74255e",
+                                    "resourcegroups": "PCI_SEC_RG",
+                                    "resourcetype": "Log Analytics Workspace",
+                                    "resourcename": "PineLabsSentinelProdUAE",
+                                    "timerange": "Last 24 hours"
+                                }
+                            }
+                        },
+                        "Condition_to_check_the_watchlist_validation_report_length": {
+                            "actions": {
+                                "Query_IP": {
+                                    "runAfter": {
+                                        "CHECK_Endpoint": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['ipapicustomconnector']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/@{encodeURIComponent(variables('IPaddress'))}"
+                                    }
+                                },
+                                "CHECK_Endpoint": {
+                                    "limit": {
+                                        "timeout": "PT10M"
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['abuseipdbapi-1']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/check",
+                                        "queries": {
+                                            "ipAddress": "@triggerBody()?['Entity']?['properties']?['Address']"
+                                        },
+                                        "retryPolicy": {
+                                            "type": "fixed",
+                                            "count": 3,
+                                            "interval": "PT20S"
+                                        }
+                                    }
+                                },
+                                "Condition_to_ignore_internal_IP_and_known_domain": {
+                                    "actions": {
+                                        "Post_message_in_a_chat_or_channel_1": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "recipient": "19:meeting_YjY1MDY0YjMtYjI3ZC00ZGQ1LWJkY2MtMTY4YTgwYTlmYzQ3@thread.v2",
+                                                    "messageBody": "<p class=\"editor-paragraph\">IP @{body('CHECK_Endpoint')?['data']?['ipAddress']} from @{body('CHECK_Endpoint')?['data']?['domain']} is auto rejected in India region.</p>"
+                                                },
+                                                "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('User')}/location/@{encodeURIComponent('Group chat')}"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Query_IP": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Condition_Check_Non_trusted_Domains_and_Countries": {
+                                                "actions": {
+                                                    "Post_message_in_a_chat_or_channel_Auto": {
+                                                        "runAfter": {
+                                                            "Append_file": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "recipient": "19:meeting_YjY1MDY0YjMtYjI3ZC00ZGQ1LWJkY2MtMTY4YTgwYTlmYzQ3@thread.v2",
+                                                                "messageBody": "<p class=\"editor-paragraph\">IP @{variables('IPAddress')} of domain @{body('CHECK_Endpoint')?['data']?['domain']} from country @{body('Query_IP')?['country']} is auto blocked in UAE region.</p>"
+                                                            },
+                                                            "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('User')}/location/@{encodeURIComponent('Group chat')}"
+                                                        }
+                                                    },
+                                                    "Adding_blocked_IP_to_watchlist_\"FirewallBlockedIP\"-copy": {
+                                                        "runAfter": {
+                                                            "Post_message_in_a_chat_or_channel_Auto": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "put",
+                                                            "body": {
+                                                                "ipaddress": "@{variables('IPaddress')}"
+                                                            },
+                                                            "path": "/Watchlists/subscriptions/@{encodeURIComponent('05482007-a538-44e4-8e37-7cab6b74255e')}/resourceGroups/@{encodeURIComponent('pci_sec_rg')}/workspaces/@{encodeURIComponent('2c8d97c3-04e3-4db1-9dff-897d4fee50a0')}/watchlists/@{encodeURIComponent('firewallblockedip')}/watchlistItem"
+                                                        }
+                                                    },
+                                                    "Sentinel_Comment_on_Successful_Blocking_Action-copy": {
+                                                        "runAfter": {
+                                                            "Adding_blocked_IP_to_watchlist_\"FirewallBlockedIP\"-copy": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "incidentArmId": "@{triggerBody()?['IncidentArmID']}",
+                                                                "message": "<p class=\"editor-paragraph\">The playbook initiated for blocking the IP address - @{variables('IPaddress')} was successful both in PROD Environement and it was updated in the watchlist \"Firewall_Blocked_IP\"</p>"
+                                                            },
+                                                            "path": "/Incidents/Comment"
+                                                        }
+                                                    },
+                                                    "Compose_NL_+_IP": {
+                                                        "type": "Compose",
+                                                        "inputs": "@concat(variables('NewLine'),variables('IPaddress'))"
+                                                    },
+                                                    "Append_file": {
+                                                        "runAfter": {
+                                                            "Compose_NL_+_IP": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "metadata": {
+                                                            "QzpcaW5ldHB1Ylx3d3dyb290XGVkbC50eHQ=": "C:\\inetpub\\wwwroot\\edl.txt"
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['filesystem']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "patch",
+                                                            "body": "@outputs('Compose_NL_+_IP')",
+                                                            "headers": {
+                                                                "ReadFileMetadataFromServer": true
+                                                            },
+                                                            "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent('QzpcaW5ldHB1Ylx3d3dyb290XGVkbC50eHQ='))}"
+                                                        }
+                                                    }
+                                                },
+                                                "else": {
+                                                    "actions": {
+                                                        "Email_Approval_Body": {
+                                                            "type": "Compose",
+                                                            "inputs": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Firewall IP Blocking Playbook</title>\n<style>\n    body {\n        font-family: 'Arial', sans-serif;\n        margin: 0;\n        padding: 20px;\n        background-color: #f8f9fa;\n        color: #3d2626;\n        display: flex;\n        flex-direction: column;\n        align-items: center;\n    }\n    h1, h2, th, .section-heading {\n        text-align: center;\n        color: black; /* Heading color */\n    }\n    table {\n        width: 100%;\n        border-collapse: collapse;\n        margin-top: 20px;\n        background-color: #f2f2f2; /* Table background color */\n        border-radius: 8px;\n        overflow: hidden;\n        box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);\n    }\n    th, td {\n        padding: 15px;\n        text-align: left;\n        border-bottom: 1px solid #ddd;\n    }\n    th {\n        background-color: #4d5b69;\n        color: #fff;\n    }\n    tr:nth-child(even) {\n        background-color: #fff;\n    }\n    .button-container {\n        text-align: center;\n        margin-top: 40px;\n    }\n    .button {\n        padding: 13px 25px;\n        background-color: cornflowerblue;\n        color: #fff;\n        border: none;\n        border-radius: 25px;\n        cursor: pointer;\n        font-size: 18px;\n        transition: background-color 0.3s;\n        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);\n        margin-right: 10px;\n    }\n    .button:hover {\n        background-color: #e9ecf0;\n    }\n    .box {\n        background-color: #28a745; /* Box background color */\n        color: #fff; /* Box text color */\n        padding: 20px;\n        border-radius: 8px;\n        margin-top: 20px;\n    }\n    p {\n        line-height: 1.6;\n        margin-bottom: 20px;\n    }\n    .section-heading {\n        background-color: #28a745;\n        color: #fff;\n        padding: 10px 20px;\n        margin-top: 30px;\n        border-radius: 8px;\n    }\n    .analyst-summary, .soc-recommendations {\n        background-color: #228338; /* Summary and Recommendations background color */\n        color: #fff; /* Summary and Recommendations text color */\n        padding: 10px 0;\n        margin-top: 30px;\n        border-radius: 8px;\n        width: 100%;\n    }\n    .text {\n        color: red; /* Disclaimer text color */\n    }\n</style>\n</head>\n<body>\n    <img src=\"python project\\logic_app_logo.png\" alt=\"Logo\" style=\"max-width: 200px;\">\n    <h1>Firewall IP Blocking</h1>\n\n    <p>\n        Dear User,\n        <br>\n        A blacklisted IP address is identified in your network which requires immediate action to avoid any potential security breaches and to safeguard the network. Please find the details below and take immediate action on priority.\n    </p>\n\n    <table>\n        <tr>\n            <th colspan=\"2\">IP</th>\n            <td colspan=\"3\">@{triggerBody()?['Entity']?['properties']?['Address']}</td>\n        </tr>\n        <tr>\n            <th colspan=\"2\">Country Name</th>\n            <td colspan=\"3\">@{body('Query_IP')?['country']}</td>\n        </tr>\n        <tr>\n            <th colspan=\"2\">Country Code</th>\n            <td colspan=\"3\">@{body('Query_IP')?['countryCode']}</td>\n        </tr>\n        <tr>\n            <th colspan=\"2\">ISP</th>\n            <td colspan=\"3\">@{body('CHECK_Endpoint')?['data']?['isp']}</td>\n        </tr>\n        <tr>\n            <th colspan=\"2\">Domain</th>\n            <td colspan=\"3\">@{body('CHECK_Endpoint')?['data']?['domain']}</td>\n        </tr>\n        <tr>\n            <th colspan=\"2\">IPConfidenceScore</th>\n            <td colspan=\"3\">@{body('CHECK_Endpoint')?['data']?['abuseConfidenceScore']}</td>\n        </tr>\n    </table>\n\n    <div class=\"soc-recommendations\">\n        <h2>SOC Recommendations</h2>\n    </div>\n    <div class=\"box\" style=\"background-color: rgb(53, 49, 49);\">\n        <p>\n            <strong>Block the source IP  @{triggerBody()?['Entity']?['properties']?['Address']} which is blacklisted, if it doesn't come under your business requirements.</strong>\n        </p>\n    </div>\n     \n    <div class=\"text\">\n    <p>\n        Disclaimer: Kindly validate the object before proceeding with the approval whether it comes under business requirements.\n    </p>\n</body>\n</html>"
+                                                        },
+                                                        "Send_approval_email": {
+                                                            "runAfter": {
+                                                                "Email_Approval_Body": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ApiConnectionWebhook",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['office365-1']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "body": {
+                                                                    "NotificationUrl": "@{listCallbackUrl()}",
+                                                                    "Message": {
+                                                                        "To": "security@pinelabs.com",
+                                                                        "Body": "Dear User,\nA blacklisted IP address has been identified in your network. Immediate action is required to prevent potential security breaches.\nDetails:\n- IP: @{triggerBody()?['Entity']?['properties']?['Address']}\n- Country Name: @{body('Query_IP')?['country']}\n- Country Code: @{body('Query_IP')?['countryCode']}\n- ISP: @{body('CHECK_Endpoint')?['data']?['isp']}\n- Domain: @{body('CHECK_Endpoint')?['data']?['domain']}\n- IP Confidence Score: @{body('CHECK_Endpoint')?['data']?['abuseConfidenceScore']}\nSOC Recommendations:\nBlock the source IP if it does not fall under your business requirements.\nDisclaimer:\nPlease validate the object before proceeding with approval to ensure it aligns with business needs.",
+                                                                        "Importance": "Normal",
+                                                                        "UseOnlyHTMLMessage": false,
+                                                                        "HideHTMLMessage": true,
+                                                                        "ShowHTMLConfirmationDialog": false,
+                                                                        "Subject": "Approval Request for Blocking IP on EDL Server [@{variables('IPaddress')}] || UAE",
+                                                                        "Options": "Approve, Reject"
+                                                                    }
+                                                                },
+                                                                "path": "/approvalmail/$subscriptions"
+                                                            },
+                                                            "runtimeConfiguration": {
+                                                                "staticResult": {
+                                                                    "staticResultOptions": "Disabled",
+                                                                    "name": "Send_approval_email0"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Condition_for_Apporval_or_Rejection": {
+                                                            "actions": {
+                                                                "Sentinel_Comment_on_Successful_Blocking_Action": {
+                                                                    "runAfter": {
+                                                                        "Adding_blocked_IP_to_watchlist_\"FirewallBlockedIP\"": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "body": {
+                                                                            "incidentArmId": "@{triggerBody()?['IncidentArmID']}",
+                                                                            "message": "<p class=\"editor-paragraph\">The playbook initiated for blocking the IP address - @{variables('IPaddress')} was successful both in PROD Environement and it was updated in the watchlist \"Firewall_Blocked_IP\"</p>"
+                                                                        },
+                                                                        "path": "/Incidents/Comment"
+                                                                    }
+                                                                },
+                                                                "Compose_(Newline+IPaddress)": {
+                                                                    "type": "Compose",
+                                                                    "inputs": "@concat(variables('Newline'),variables('IPaddress'))"
+                                                                },
+                                                                "Adding_blocked_IP_to_watchlist_\"FirewallBlockedIP\"": {
+                                                                    "runAfter": {
+                                                                        "Post_message_in_a_chat_or_channel": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "put",
+                                                                        "body": {
+                                                                            "ipaddress": "@{variables('IPaddress')}"
+                                                                        },
+                                                                        "path": "/Watchlists/subscriptions/@{encodeURIComponent('05482007-a538-44e4-8e37-7cab6b74255e')}/resourceGroups/@{encodeURIComponent('pci_sec_rg')}/workspaces/@{encodeURIComponent('2c8d97c3-04e3-4db1-9dff-897d4fee50a0')}/watchlists/@{encodeURIComponent('firewallblockedip')}/watchlistItem"
+                                                                    }
+                                                                },
+                                                                "Append_file_on_PROD_server": {
+                                                                    "runAfter": {
+                                                                        "Compose_(Newline+IPaddress)": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['filesystem']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "patch",
+                                                                        "body": "@outputs('Compose_(Newline+IPaddress)')",
+                                                                        "headers": {
+                                                                            "ReadFileMetadataFromServer": true
+                                                                        },
+                                                                        "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent('C:\\inetpub\\wwwroot\\edl.txt'))}"
+                                                                    }
+                                                                },
+                                                                "Send_Email_for_Blocking_Failure_on_EDL_Server": {
+                                                                    "runAfter": {
+                                                                        "Append_file_on_PROD_server": [
+                                                                            "Skipped",
+                                                                            "Failed"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "body": {
+                                                                            "To": "chaitanya.mali@pinelabs.com",
+                                                                            "Subject": "[concat('On-Premise Connection Failure in Logic App \"', parameters('workflows_AEAZ_Firewall_IP_Blocking_name'), ' \"')]",
+                                                                            "Body": "<p class=\"editor-paragraph\">Dear Member</p><br><p class=\"editor-paragraph\">The Request Raised for Firewall Blocking was Unsuccessfull , Due failure in connection of \"Append file to Prod Server (Dc)\"</p><br><p class=\"editor-paragraph\">Please find below details for raised request:</p><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Incident Title : </strong></b>@{body('Get_incident')?['properties']?['title']}</p><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Incident Owner : </strong></b>@{body('Get_incident')?['properties']?['owner']?['assignedTo']}</p><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">IP Address :</strong></b> @{variables('IPaddress')}</p><br><p class=\"editor-paragraph\">Regards<br>Pinelabs SOAR bot</p>",
+                                                                            "Cc": "soc.pinelabs@lists.inspiraenterprise.com",
+                                                                            "Importance": "Normal"
+                                                                        },
+                                                                        "path": "/v2/Mail"
+                                                                    }
+                                                                },
+                                                                "Post_message_in_a_chat_or_channel": {
+                                                                    "runAfter": {
+                                                                        "Append_file_on_PROD_server": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "body": {
+                                                                            "recipient": "19:meeting_YjY1MDY0YjMtYjI3ZC00ZGQ1LWJkY2MtMTY4YTgwYTlmYzQ3@thread.v2",
+                                                                            "messageBody": "<p class=\"editor-paragraph\">IP @{variables('IPAddress')} of domain @{body('CHECK_Endpoint')?['data']?['domain']} from country @{body('Query_IP')?['country']} is approved and blocked in India region.</p>"
+                                                                        },
+                                                                        "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('User')}/location/@{encodeURIComponent('Group chat')}"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Send_approval_email": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "else": {
+                                                                "actions": {
+                                                                    "Termination_on_rejection_of_approval": {
+                                                                        "runAfter": {
+                                                                            "Post_message_in_a_chat_or_channel_Rejection": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "Terminate",
+                                                                        "inputs": {
+                                                                            "runStatus": "Succeeded"
+                                                                        }
+                                                                    },
+                                                                    "Post_message_in_a_chat_or_channel_Rejection": {
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "body": {
+                                                                                "recipient": "19:meeting_YjY1MDY0YjMtYjI3ZC00ZGQ1LWJkY2MtMTY4YTgwYTlmYzQ3@thread.v2",
+                                                                                "messageBody": "<p class=\"editor-paragraph\">IP @{variables('IPAddress')} of domain @{body('CHECK_Endpoint')?['data']?['domain']} from country @{body('Query_IP')?['country']} is rejected and Not blocked in India region.</p>"
+                                                                            },
+                                                                            "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('User')}/location/@{encodeURIComponent('Group chat')}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "equals": [
+                                                                            "@body('Send_approval_email')?['SelectedOption']",
+                                                                            "Approve"
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "type": "If"
+                                                        }
+                                                    }
+                                                },
+                                                "expression": {
+                                                    "or": [
+                                                        {
+                                                            "equals": [
+                                                                "@body('Query_IP')?['countryCode']",
+                                                                "PK"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('Query_IP')?['countryCode']",
+                                                                "CN"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('Query_IP')?['countryCode']",
+                                                                "HK"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "digitalocean.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "censys.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "contabo.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "shadowserver.org"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "shodan.io"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "cheapy.host"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "privatelayer.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "pfcloud.io"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "linode.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "hostpapa.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "mevspace.com"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "onyphe.io"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "censys.io"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "equals": [
+                                                                "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                                "dmzhost.co"
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "type": "If"
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "or": [
+                                            {
+                                                "startsWith": [
+                                                    "@variables('IPAddress')",
+                                                    "10."
+                                                ]
+                                            },
+                                            {
+                                                "startsWith": [
+                                                    "@variables('IPAddress')",
+                                                    "192.168."
+                                                ]
+                                            },
+                                            {
+                                                "startsWith": [
+                                                    "@variables('IPAddress')",
+                                                    "172.16."
+                                                ]
+                                            },
+                                            {
+                                                "equals": [
+                                                    "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                    "pinelabs.com"
+                                                ]
+                                            },
+                                            {
+                                                "equals": [
+                                                    "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                    "paloaltonetworks.com"
+                                                ]
+                                            },
+                                            {
+                                                "equals": [
+                                                    "@body('CHECK_Endpoint')?['data']?['domain']",
+                                                    "qualys.com"
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "Capturing_Result_of_(Validation_in_Firewall_Blocked_IP)_action": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "Terminate": {
+                                        "runAfter": {
+                                            "Comment_for_Termination_Approval": [
+                                                "Succeeded"
+                                            ]
+                                        },
+                                        "type": "Terminate",
+                                        "inputs": {
+                                            "runStatus": "Succeeded"
+                                        }
+                                    },
+                                    "Comment_for_Termination_Approval": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                }
+                                            },
+                                            "method": "post",
+                                            "body": {
+                                                "incidentArmId": "@triggerBody()?['IncidentArmID']",
+                                                "message": "<p>The playbook initiated for blocking the<b><strong> IP address  - </strong></b>@{variables('IPaddress')} was prematurely halted, as the IP had already been flagged and listed on the firewall list</p>"
+                                            },
+                                            "path": "/Incidents/Comment"
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@outputs('Capturing_Result_of_(Validation_in_Firewall_Blocked_IP)_action')",
+                                            0
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Variable(NewLine)": {
+                            "runAfter": {
+                                "Variable(IPAddress)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Newline",
+                                        "type": "string",
+                                        "value": "\n"
+                                    }
+                                ]
+                            }
+                        },
+                        "Appending_variable_to_(Ip_Address)": {
+                            "runAfter": {
+                                "Variable(NewLine)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "AppendToStringVariable",
+                            "inputs": {
+                                "name": "IPaddress",
+                                "value": "@triggerBody()?['Entity']?['properties']?['Address']"
+                            }
+                        },
+                        "Capturing_Result_of_(Validation_in_Firewall_Blocked_IP)_action": {
+                            "runAfter": {
+                                "Validation_in_Firewall_Blocked_IP": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@length(body('Validation_in_Firewall_Blocked_IP')?['value'])"
+                        },
+                        "Get_incident": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "incidentArmId": "@triggerBody()?['IncidentArmID']"
+                                },
+                                "path": "/Incidents"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "id": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/providers/Microsoft.Web/locations/uaenorth/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_3_externalid')]",
+                                "connectionName": "azuresentinel-3",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "azuremonitorlogs-1": {
+                                "id": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/providers/Microsoft.Web/locations/uaenorth/managedApis/azuremonitorlogs",
+                                "connectionId": "[parameters('connections_azuremonitorlogs_1_externalid')]",
+                                "connectionName": "azuremonitorlogs-1",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "ipapicustomconnector": {
+                                "id": "[parameters('customApis_ipapicustomconnector_externalid')]",
+                                "connectionId": "[parameters('connections_ipapicustomconnector_externalid')]",
+                                "connectionName": "ipapicustomconnector",
+                                "connectionProperties": {}
+                            },
+                            "abuseipdbapi-1": {
+                                "id": "[parameters('customApis_abuseipdbapi_externalid')]",
+                                "connectionId": "[parameters('connections_abuseipdbapi_1_externalid')]",
+                                "connectionName": "abuseipdbapi-1",
+                                "connectionProperties": {}
+                            },
+                            "teams": {
+                                "id": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/providers/Microsoft.Web/locations/uaenorth/managedApis/teams",
+                                "connectionId": "[parameters('connections_teams_externalid')]",
+                                "connectionName": "teams",
+                                "connectionProperties": {}
+                            },
+                            "azuresentinel-2": {
+                                "id": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/providers/Microsoft.Web/locations/uaenorth/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_2_externalid')]",
+                                "connectionName": "azuresentinel-2",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "filesystem": {
+                                "id": "/subscriptions/05482007-a538-44e4-8e37-7cab6b74255e/providers/Microsoft.Web/locations/uaenorth/managedApis/filesystem",
+                                "connectionId": "[parameters('connections_filesystem_1_externalid')]",
+                                "connectionName": "filesystem-1",
+                                "connectionProperties": {}
+                            },
+                            "office365-1": {
+                                "id": "/subscriptions/016d4828-4759-41cd-b6c7-bd973332fa27/providers/Microsoft.Web/locations/centralindia/managedApis/office365",
+                                "connectionId": "[parameters('connections_office365_1_externalid')]",
+                                "connectionName": "office365-1",
+                                "connectionProperties": {}
+                            },
+                            "office365": {
+                                "id": "/subscriptions/13fd2615-bd59-4c24-9c87-e2867d3290d7/providers/Microsoft.Web/locations/southeastasia/managedApis/office365",
+                                "connectionId": "[parameters('connections_office365_1_externalid')]",
+                                "connectionName": "office365-1",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
