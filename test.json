@@ -5,27 +5,33 @@
     "title": "Logic app Title",
     "description": "Logic app description",
     "prerequisites": "",
-    "lastUpdateTime": "",
-    "author": {}
+    "lastUpdateTime": "2026-03-06T00:00:00.000Z",
+    "author": {
+      "name": "Abhi Patidar"
+    }
   },
   "parameters": {
     "PlaybookName": {
       "type": "String",
       "defaultValue": "logic-app-name"
     },
-    "connections_azuremonitorlogs_externalid": {
+    "workspaceSubscriptionId": {
       "type": "String",
-      "defaultValue": "/subscriptions/your-subscription-id/resourceGroups/your-resource-group/providers/Microsoft.Web/customApis/azuremonitorlogs"
+      "defaultValue": "your-subscription-id"
     },
-    "connections_azureloganalyticsdatacollector_externalid": {
+    "workspaceResourceGroup": {
       "type": "String",
-      "defaultValue": "/subscriptions/your-subscription-id/resourceGroups/your-resource-group/providers/Microsoft.Web/customApis/azureloganalyticsdatacollector"
+      "defaultValue": "your-resource-group"
+    },
+    "workspaceName": {
+      "type": "String",
+      "defaultValue": "your-log-analytics-workspace-name"
     }
   },
   "variables": {
     "logicAppName": "[parameters('PlaybookName')]",
     "azuremonitorlogsConnectionName": "[concat('azuremonitorlogs-', parameters('PlaybookName'))]",
-    "azureloganalyticsdatacollectorConnectionName": "[concat('azureloganalyticsdatacollector-', parameters('PlaybookName'))]"
+    "office365ConnectionName": "[concat('office365-', parameters('PlaybookName'))]"
   },
   "resources": [
     {
@@ -43,13 +49,13 @@
     {
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
-      "name": "[variables('azureloganalyticsdatacollectorConnectionName')]",
+      "name": "[variables('office365ConnectionName')]",
       "location": "[resourceGroup().location]",
       "properties": {
         "api": {
-          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureloganalyticsdatacollector')]"
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/office365')]"
         },
-        "displayName": "Azureloganalyticsdatacollector"
+        "displayName": "Office365"
       }
     },
     {
@@ -71,390 +77,70 @@
             }
           },
           "triggers": {
-            "Recurrence": {
+            "When_a_Microsoft_Sentinel_alert_is_created": {
               "recurrence": {
-                "interval": 30,
-                "frequency": "Minute"
+                "interval": 3,
+                "unit": "Minute"
               },
               "evaluatedRecurrence": {
-                "interval": 30,
-                "frequency": "Minute"
+                "interval": 3,
+                "unit": "Minute"
               },
-              "type": "Recurrence"
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/subscriptions/@{encodeURIComponent(parameters('workspaceSubscriptionId'))}/resourceGroups/@{encodeURIComponent(parameters('workspaceResourceGroup'))}/providers/Microsoft.OperationalInsights/workspaces/@{encodeURIComponent(parameters('workspaceName'))}/providers/Microsoft.SecurityInsights/alertRules",
+                "queries": {
+                  "IsScheduled": true,
+                  "triggerState": "Undeleted"
+                }
+              }
             }
           },
           "actions": {
-            "HTTP_Auth": {
-              "runAfter": {
-                "Initialize_variables": [
-                  "Succeeded"
-                ]
-              },
-              "type": "Http",
-              "inputs": {
-                "uri": "https://client-api.izoolabs.com/api/Token/Authenticate",
-                "method": "POST",
-                "headers": {
-                  "Content-Type": "application/json"
-                },
-                "body": {
-                  "apiKey": "93171A4A-1636-4295-9508-7619A3C77C30",
-                  "secretKey": "1D5C1619-10BD-4474-B649-128E1A0CE9D450EE17BA-BDEC-4AFF-8225-8CDD681EF85B"
-                }
-              },
-              "runtimeConfiguration": {
-                "contentTransfer": {
-                  "transferMode": "Chunked"
-                }
-              }
-            },
-            "HTTP_Incident": {
-              "runAfter": {
-                "HTTP_Auth": [
-                  "Succeeded"
-                ]
-              },
-              "type": "Http",
-              "inputs": {
-                "uri": "https://client-api.izoolabs.com/api/ThreatManagement/FetchIncidents",
-                "method": "POST",
-                "headers": {
-                  "Authorization": "Bearer @{body('HTTP_Auth')?['result']?['accessToken']}"
-                },
-                "body": {
-                  "fromDate": "@{div(sub(ticks(addMinutes(utcNow(),-31)),ticks('1970-01-01T00:00:00Z')),10000000)\n}",
-                  "toDate": "@{div(sub(ticks(utcNow()),ticks('1970-01-01T00:00:00Z')),10000000)}"
-                }
-              },
-              "runtimeConfiguration": {
-                "contentTransfer": {
-                  "transferMode": "Chunked"
-                }
-              }
-            },
-            "Initialize_variables": {
+            "Get_Incidents": {
               "runAfter": {},
-              "type": "InitializeVariable",
+              "type": "ApiConnection",
               "inputs": {
-                "variables": [
-                  {
-                    "name": "logs",
-                    "type": "array"
-                  },
-                  {
-                    "name": "files",
-                    "type": "array"
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
                   }
-                ]
+                },
+                "method": "get",
+                "path": "/subscriptions/@{encodeURIComponent(parameters('workspaceSubscriptionId'))}/resourceGroups/@{encodeURIComponent(parameters('workspaceResourceGroup'))}/providers/Microsoft.OperationalInsights/workspaces/@{encodeURIComponent(parameters('workspaceName'))}/providers/Microsoft.SecurityInsights/incidents",
+                "queries": {
+                  "$filter": "properties/status eq 'New'",
+                  "api-version": "2020-01-01"
+                }
               }
             },
-            "if_no_Incident": {
-              "actions": {},
+            "Send_an_email_(V2)": {
               "runAfter": {
-                "HTTP_Incident": [
+                "Get_Incidents": [
                   "Succeeded"
                 ]
               },
-              "else": {
-                "actions": {
-                  "For_each_Incident": {
-                    "foreach": "@body('HTTP_Incident')?['result']?['incidents']",
-                    "actions": {
-                      "check_incident_type": {
-                        "actions": {
-                          "Run_query_and_list_results": {
-                            "type": "ApiConnection",
-                            "inputs": {
-                              "host": {
-                                "connection": {
-                                  "name": "[resourceId('Microsoft.Web/connections', variables('azuremonitorlogsConnectionName'))]"
-                                }
-                              },
-                              "method": "post",
-                              "body": "izoolab_CL\n| where incidentID_s == \"@{items('For_each_Incident')?['incidentID']}\"",
-                              "path": "/queryData",
-                              "queries": {
-                                "subscriptions": "016d4828-4759-41cd-b6c7-bd973332fa27",
-                                "resourcegroups": "PCI_SEC_RG",
-                                "resourcetype": "Log Analytics Workspace",
-                                "resourcename": "PineLabsSentinelProd",
-                                "timerange": "7d"
-                              }
-                            }
-                          },
-                          "Condition_2": {
-                            "actions": {},
-                            "runAfter": {
-                              "Run_query_and_list_results": [
-                                "Succeeded"
-                              ]
-                            },
-                            "else": {
-                              "actions": {
-                                "left_data": {
-                                  "type": "Compose",
-                                  "inputs": "@items('For_each_Incident')"
-                                },
-                                "HTTP_case_details": {
-                                  "runAfter": {
-                                    "left_data": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "Http",
-                                  "inputs": {
-                                    "uri": "https://client-api.izoolabs.com/api/ThreatManagement/CaseDetail?caseId=@{items('For_each_Incident')?['incidentID']}",
-                                    "method": "GET",
-                                    "headers": {
-                                      "Authorization": "Bearer @{body('HTTP_Auth')?['result']?['accessToken']}"
-                                    }
-                                  },
-                                  "runtimeConfiguration": {
-                                    "contentTransfer": {
-                                      "transferMode": "Chunked"
-                                    }
-                                  }
-                                },
-                                "right_data": {
-                                  "runAfter": {
-                                    "HTTP_case_details": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "Compose",
-                                  "inputs": "@body('HTTP_case_details')?['result']"
-                                },
-                                "Output": {
-                                  "runAfter": {
-                                    "right_data": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "Compose",
-                                  "inputs": "@union(outputs('left_data'), outputs('right_data'))\n"
-                                },
-                                "top": {
-                                  "runAfter": {
-                                    "Output": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "Compose",
-                                  "inputs": {
-                                    "incidentID": "@{outputs('output')?['incidentID']}",
-                                    "brandCode": "@{outputs('output')?['brandCode']}",
-                                    "brand": "@{outputs('output')?['brand']}",
-                                    "brandId": "@{outputs('output')?['brandId']}",
-                                    "url": "@{outputs('output')?['url']}",
-                                    "incidentType": "@{outputs('output')?['incidentType']}",
-                                    "subIncidentType": "@{outputs('output')?['subIncidentType']}",
-                                    "threatType": "@{outputs('output')?['threatType']}",
-                                    "status": "@{outputs('output')?['status']}",
-                                    "statusCode": "@{outputs('output')?['statusCode']}",
-                                    "clientRef": "@{outputs('output')?['clientRef']}",
-                                    "createdOn": "@{if(empty(outputs('output')?['createdOn']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['createdOn'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
-                                    "closedOn": "@{if(empty(outputs('output')?['closedOn']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['closedOn'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
-                                    "detectionDate": "@{if(empty(outputs('output')?['detectionDate']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['detectionDate'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
-                                    "addedDate": "@{if(empty(outputs('output')?['addedDate']), null, formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(outputs('output')?['addedDate'])), 'yyyy-MM-ddTHH:mm:ssZ'))}",
-                                    "uptime": "@{outputs('output')?['uptime']}",
-                                    "detectedBy": "@{outputs('output')?['detectedBy']}",
-                                    "executiveName": "@{outputs('output')?['executiveName']}",
-                                    "caseType": "@{outputs('output')?['caseType']}",
-                                    "caseDescription": "@{outputs('output')?['caseDescription']}",
-                                    "statusDescription": "@{outputs('output')?['statusDescription']}",
-                                    "description": "@{outputs('output')?['description']}",
-                                    "impact": "@{outputs('output')?['impact']}",
-                                    "recommendation": "@{outputs('output')?['recommendation']}",
-                                    "ipAddress": "@{outputs('output')?['ipAddress']}",
-                                    "webhost": "@{outputs('output')?['webhost']}",
-                                    "webhostCountry": "@{outputs('output')?['webhostCountry']}",
-                                    "registrarName": "@{outputs('output')?['registrarName']}",
-                                    "nameServer": "@{outputs('output')?['nameServer']}",
-                                    "mxRecord": "@{outputs('output')?['mxRecord']}",
-                                    "progressStage": "@{outputs('output')?['progressStage']}",
-                                    "mobileAppName": "@{outputs('output')?['mobileAppName']}",
-                                    "mobileAppVersion": "@{outputs('output')?['mobileAppVersion']}",
-                                    "mobileAppStatus": "@{outputs('output')?['mobileAppStatus']}",
-                                    "mobileAppSignature": "@{outputs('output')?['mobileAppSignature']}"
-                                  }
-                                },
-                                "final_output": {
-                                  "runAfter": {
-                                    "Condition_1": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "Compose",
-                                  "inputs": "@setProperty(\n    setProperty(\n        outputs('top'),\n        'incidentStatusLogs',\n        variables('logs')\n    ),\n    'caseFiles',\n    variables('files')\n)\n"
-                                },
-                                "Send_Data": {
-                                  "runAfter": {
-                                    "final_output": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "type": "ApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connection": {
-                                        "name": "[resourceId('Microsoft.Web/connections', variables('azureloganalyticsdatacollectorConnectionName'))]"
-                                      }
-                                    },
-                                    "method": "post",
-                                    "body": "@{outputs('final_output')}",
-                                    "headers": {
-                                      "Log-Type": "izoolab_CL"
-                                    },
-                                    "path": "/api/logs"
-                                  }
-                                },
-                                "Condition": {
-                                  "actions": {},
-                                  "runAfter": {
-                                    "top": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "else": {
-                                    "actions": {
-                                      "For_each": {
-                                        "foreach": "@outputs('Output')?['incidentStatusLogs']",
-                                        "actions": {
-                                          "logs_append": {
-                                            "type": "AppendToArrayVariable",
-                                            "inputs": {
-                                              "name": "logs",
-                                              "value": {
-                                                "incidentStatus": "@items('For_each')?['incidentStatus']",
-                                                "incidentStatusDescription": "@{string(items('For_each')?['incidentStatusDescription'])}",
-                                                "remark": "@{string(items('For_each')?['remark'])}",
-                                                "updatedOn": "@{formatDateTime(convertTimeZone(addSeconds('1970-01-01T00:00:00Z', int(items('For_each')?['updatedOn'])), 'UTC', 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}",
-                                                "updatedBy": "@{string(items('For_each')?['updatedBy'])}"
-                                              }
-                                            }
-                                          }
-                                        },
-                                        "type": "Foreach"
-                                      }
-                                    }
-                                  },
-                                  "expression": {
-                                    "and": [
-                                      {
-                                        "equals": [
-                                          "@outputs('Output')?['incidentStatusLogs']",
-                                          "@null"
-                                        ]
-                                      }
-                                    ]
-                                  },
-                                  "type": "If"
-                                },
-                                "Condition_1": {
-                                  "actions": {},
-                                  "runAfter": {
-                                    "Condition": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "else": {
-                                    "actions": {
-                                      "For_each-copy": {
-                                        "foreach": "@outputs('Output')?['caseFiles']",
-                                        "actions": {
-                                          "Append_files": {
-                                            "type": "AppendToArrayVariable",
-                                            "inputs": {
-                                              "name": "files",
-                                              "value": {
-                                                "dateUploaded": "@{formatDateTime(addSeconds('1970-01-01T00:00:00Z', int(items('For_each-copy')?['dateUploaded'])), 'yyyy-MM-dd HH:mm:ss')}",
-                                                "originalFilename": "@{string(items('For_each-copy')?['originalFilename'])}",
-                                                "fileToken": "@{string(items('For_each-copy')?['fileToken'])}",
-                                                "isCaseScreenshot": "@{string(items('For_each-copy')?['isCaseScreenshot'])}"
-                                              }
-                                            }
-                                          }
-                                        },
-                                        "type": "Foreach"
-                                      }
-                                    }
-                                  },
-                                  "expression": {
-                                    "and": [
-                                      {
-                                        "equals": [
-                                          "@outputs('Output')?['caseFiles']",
-                                          "@null"
-                                        ]
-                                      }
-                                    ]
-                                  },
-                                  "type": "If"
-                                }
-                              }
-                            },
-                            "expression": {
-                              "and": [
-                                {
-                                  "greater": [
-                                    "@length(body('Run_query_and_list_results')?['value'])",
-                                    0
-                                  ]
-                                }
-                              ]
-                            },
-                            "type": "If"
-                          }
-                        },
-                        "else": {
-                          "actions": {}
-                        },
-                        "expression": {
-                          "or": [
-                            {
-                              "equals": [
-                                "@items('For_each_Incident')?['threatType']",
-                                "Critical Threat"
-                              ]
-                            },
-                            {
-                              "equals": [
-                                "@items('For_each_Incident')?['threatType']",
-                                "High Threat"
-                              ]
-                            },
-                            {
-                              "equals": [
-                                "@items('For_each_Incident')?['threatType']",
-                                "Substantial Threat"
-                              ]
-                            }
-                          ]
-                        },
-                        "type": "If"
-                      }
-                    },
-                    "type": "Foreach"
+              "type": "ApiConnection",
+              "inputs": {
+                "body": {
+                  "To": "example@example.com",
+                  "Subject": "Alert: @{triggerOutputs().body.properties.alertDisplayName}",
+                  "Body": "Severity: @{triggerOutputs().body.properties.severity}\nEntities: @{triggerOutputs().body.properties.entities}\nDescription: @{triggerOutputs().body.properties.description}"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['office365']['connectionId']"
                   }
-                }
-              },
-              "expression": {
-                "and": [
-                  {
-                    "equals": [
-                      "@body('HTTP_Incident')?['result']",
-                      "@null"
-                    ]
-                  },
-                  {
-                    "equals": [
-                      "",
-                      ""
-                    ]
-                  }
-                ]
-              },
-              "type": "If"
+                },
+                "method": "post",
+                "path": "/v2/Mail"
+              }
             }
           },
           "outputs": {}
@@ -462,24 +148,24 @@
         "parameters": {
           "$connections": {
             "value": {
-              "azuremonitorlogs-1": {
-                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuremonitorlogs')]",
+              "azuremonitorlogs": {
                 "connectionId": "[resourceId('Microsoft.Web/connections', variables('azuremonitorlogsConnectionName'))]",
-                "connectionName": "[variables('azuremonitorlogsConnectionName')]"
+                "connectionName": "[variables('azuremonitorlogsConnectionName')]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuremonitorlogs')]"
               },
-              "azureloganalyticsdatacollector": {
-                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azureloganalyticsdatacollector')]",
-                "connectionId": "[resourceId('Microsoft.Web/connections', variables('azureloganalyticsdatacollectorConnectionName'))]",
-                "connectionName": "[variables('azureloganalyticsdatacollectorConnectionName')]"
+              "office365": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('office365ConnectionName'))]",
+                "connectionName": "[variables('office365ConnectionName')]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/office365')]"
               }
             }
           }
-        },
-        "dependsOn": [
-          "[resourceId('Microsoft.Web/connections', variables('azuremonitorlogsConnectionName'))]",
-          "[resourceId('Microsoft.Web/connections', variables('azureloganalyticsdatacollectorConnectionName'))]"
-        ]
-      }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', variables('azuremonitorlogsConnectionName'))]",
+        "[resourceId('Microsoft.Web/connections', variables('office365ConnectionName'))]"
+      ]
     }
   ]
 }
