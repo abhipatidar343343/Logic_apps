@@ -5,9 +5,9 @@
 ![Automation](https://img.shields.io/badge/Automation-ARM%20Templates-green)
 ![Status](https://img.shields.io/badge/status-active-success)
 
-A utility for converting exported **Azure Logic App JSON definitions** into **environment-agnostic, parameterized ARM templates** suitable for multi-environment deployments.
+A utility for converting exported **Azure Logic App JSON definitions** into **environment-agnostic, parameterized ARM templates** suitable for deployment across multiple Azure environments.
 
-This repository provides a simple CLI wrapper that executes a transformation notebook to automatically parameterize Logic App templates.
+This repository provides a CLI wrapper that executes a transformation notebook to automatically parameterize Logic App templates.
 
 ---
 
@@ -18,16 +18,16 @@ Exported Logic Apps from Azure typically contain **hard-coded environment values
 - Subscription IDs  
 - Resource Group names  
 - Connection IDs  
-- API references  
+- Managed API references  
 
-This makes them difficult to reuse across environments.
+This makes them difficult to redeploy across environments.
 
-This tool automatically converts exported Logic App definitions into **reusable ARM templates** by:
+This tool converts exported Logic App definitions into **reusable ARM templates** by:
 
 - Detecting environment-specific values
 - Converting them into parameters
 - Rebuilding the Logic App template structure
-- Generating a deployable ARM template
+- Producing a deployable ARM template
 
 ---
 
@@ -42,7 +42,7 @@ This tool automatically converts exported Logic App definitions into **reusable 
 | File | Description |
 |-----|-------------|
 | `converter.ipynb` | Notebook containing the Logic App parameterization logic |
-| `parameterizer.py` | CLI script used to execute the notebook against input JSON files |
+| `parameterizer.py` | CLI wrapper used to execute the notebook against JSON files |
 
 ---
 
@@ -112,19 +112,19 @@ Each Logic App file is converted into a **parameterized ARM template**.
 "connectionId": "[resourceId('Microsoft.Web/connections', variables('azuremonitorlogsConnectionName'))]"
 ```
 
-Environment-specific values are converted into **parameterized expressions**, allowing the template to be deployed in any Azure environment.
+Environment-specific values are converted into **ARM expressions and parameters**, allowing the template to be deployed across multiple environments.
 
 ---
 
 # How It Works
 
-1. The CLI script scans the specified folder for `.json` files.
-2. Files ending in `_template.json` are automatically skipped.
+1. The CLI scans the specified directory for `.json` files.
+2. Files ending with `_template.json` are skipped.
 3. For each Logic App file:
    - `converter.ipynb` is executed programmatically
-   - The Logic App definition is analyzed
-   - Environment values are parameterized
-4. A deployable ARM template is generated and saved next to the original file.
+   - Environment-specific values are detected
+   - The Logic App definition is parameterized
+4. A deployable ARM template is generated and saved alongside the original file.
 
 ---
 
@@ -134,7 +134,7 @@ Environment-specific values are converted into **parameterized expressions**, al
 Logic App Export
         │
         ▼
-JSON Logic App Definition
+Logic App JSON Definition
         │
         ▼
 Parameterizer CLI
@@ -151,11 +151,41 @@ Reusable Cross-Environment Deployment
 
 ---
 
+# Limitations
+
+## Custom Connectors
+
+⚠️ **Custom connectors are currently not supported.**
+
+Logic Apps that rely on **Azure Custom Connectors (`Microsoft.Web/customApis`)** cannot be fully parameterized by this tool.
+
+Custom connectors require:
+
+- Existing `customApis` resources
+- Correct `join/action` permissions
+- Pre-configured API connections
+
+Because of this, the tool does **not automatically handle**:
+
+- `Microsoft.Web/customApis`
+- Custom connector API IDs
+- Custom connector authorization bindings
+
+### Recommended Workflow for Custom Connectors
+
+If your Logic App uses custom connectors:
+
+1. Deploy the custom connector manually.
+2. Create the required API connection in the target environment.
+3. Update the generated ARM template to reference the existing connection.
+
+---
+
 # Notes
 
 - All `.json` files in the specified directory are processed.
-- Files already ending with `_template.json` are skipped.
-- Each file is processed independently.
+- Files ending with `_template.json` are skipped.
+- Each Logic App file is processed independently.
 
 ---
 
@@ -196,8 +226,8 @@ parameterizer.py
 
 Potential enhancements include:
 
-- Parallel processing for large Logic App batches
-- Single-file mode
+- Parallel processing for large batches of Logic Apps
+- Support for custom connector parameterization
 - Automated ARM template validation
 - Packaging as an installable Python CLI tool
 - GitHub Action integration for CI deployments
